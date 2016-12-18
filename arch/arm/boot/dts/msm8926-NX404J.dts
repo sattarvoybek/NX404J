@@ -15,6 +15,9 @@
 /include/ "msm8926-v1.dtsi"
 /include/ "NX404J/dsi-sharp-panel-r69431-720p-video.dtsi"
 /include/ "NX404J/dsi-sharp-panel-r69431-720p-cmd.dtsi"
+/include/ "NX404J/dsi-tianma-panel-otm1282a-720p-video.dtsi"
+/include/ "NX404J/dsi-tianma-panel-otm1282a-720p-cmd.dtsi"
+/include/ "NX404J/dsi-sharp-panel-r69431-1080p-video.dtsi"
 /include/ "NX404J/msm8226-720p-mtp.dtsi"
 /include/ "NX404J/msm8226-camera-sensor-mtp.dtsi"
 

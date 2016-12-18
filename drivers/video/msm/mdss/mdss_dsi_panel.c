@@ -29,7 +29,9 @@
 #ifdef CONFIG_ZTEMT_LCD_BACKLIGHT
 #include "zte_backlight.h"
 #endif
-
+#if defined(CONFIG_ZTEMT_NX404H_LCD) || defined(CONFIG_ZTEMT_NE501_LCD)
+struct mdss_dsi_ctrl_pdata *zte_ctrl_post;
+#endif
 #define DT_CMD_HDR 6
 
 #ifdef CONFIG_ZTEMT_MIPI_720P_R69431_SHARP_IPS_4P7
@@ -41,8 +43,10 @@
 #define PW_OFF_AVDD_EN_SLEEP  10
 #define PW_OFF_RESET_SLEEP    5
 #endif
-#ifdef CONFIG_ZTEMT_HW_VERSION_NX505J
-extern int ztemt_get_hw_id(void);
+
+#ifdef CONFIG_ZTEMT_MIPI_720P_NT35592_SHARP_IPS_5P
+/*NE501 mayu*/
+#define PW_OFF_RESET_SLEEP    11
 #endif
 
 DEFINE_LED_TRIGGER(bl_led_trigger);
@@ -399,11 +403,11 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 				gpio_set_value((ctrl_pdata->rst_gpio),
 					pdata->panel_info.rst_seq[i]);
 				if (pdata->panel_info.rst_seq[++i])
-        				#if 1
-					mdelay(pinfo->rst_seq[i]);
-				#else
+#ifdef CONFIG_ZTEMT_NE501_LCD
+					udelay(pinfo->rst_seq[i]);
+#else
 					usleep(pinfo->rst_seq[i] * 1000);
-				#endif
+#endif
 			}
 		}
 
@@ -491,36 +495,6 @@ static int mdss_dsi_panel_partial_update(struct mdss_panel_data *pdata)
 	return rc;
 }
 
-static void mdss_dsi_panel_switch_mode(struct mdss_panel_data *pdata,
-							int mode)
-{
-	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-	struct mipi_panel_info *mipi;
-	struct dsi_panel_cmds *pcmds;
-
-	if (pdata == NULL) {
-		pr_err("%s: Invalid input data\n", __func__);
-		return;
-	}
-
-	mipi  = &pdata->panel_info.mipi;
-
-	if (!mipi->dynamic_switch_enabled)
-		return;
-
-	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
-				panel_data);
-
-	if (mode == DSI_CMD_MODE)
-		pcmds = &ctrl_pdata->video2cmd;
-	else
-		pcmds = &ctrl_pdata->cmd2video;
-
-	mdss_dsi_panel_cmds_send(ctrl_pdata, pcmds);
-
-	return;
-}
-
 static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 							u32 bl_level)
 {
@@ -589,6 +563,11 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 				panel_data);
 	mipi  = &pdata->panel_info.mipi;
 
+#if defined(CONFIG_ZTEMT_NX404H_LCD) || defined(CONFIG_ZTEMT_NE501_LCD)
+	zte_ctrl_post = ctrl;
+#endif
+
+	printk("lcd:%s \n",__func__);
 	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
 	pr_info("lcd:%s start.\n",__func__);
@@ -604,21 +583,41 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->on_second_cmds);
 #endif
 
-#if 0
-
-	mdss_dsi_panel_reg_read(ctrl);
-
-	/*luochangyang for Read Registers 2014/06/16*/
-	for (i = 0; i < 0x5a0; i = i + 4) {
-		data = (u32)MIPI_INP((ctrl->ctrl_base) + i);
-	
-		printk("ctl_base(0x%x) + 0x%x = 0x%x.\n", *(ctrl->ctrl_base), i, data);
-	}
-	/*luochangyang END*/
-#endif
-	pr_info("lcd:%s done.\n",__func__);
+	pr_debug("%s:-\n", __func__);
 	return 0;
 }
+#ifdef CONFIG_ZTEMT_NX404H_LCD
+int mipi_lcd_on_post(void)
+{
+	static bool is_firsttime = true;
+	if (is_firsttime) {
+		is_firsttime = false;
+		return 0;
+	}
+
+	if (zte_ctrl_post && zte_ctrl_post->on_cmds_post.cmd_cnt) {
+		mdss_dsi_panel_cmds_send(zte_ctrl_post, &zte_ctrl_post->on_cmds_post);
+	}
+
+	 return 0;
+}
+#endif
+
+#ifdef CONFIG_ZTEMT_NE501_LCD
+int mipi_lcd_esd_command(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
+{
+	if (ctrl_pdata 
+		&& (ctrl_pdata->panel_name 
+			&& !strcmp(ctrl_pdata->panel_name, "success hx8392b 720p video mode dsi panel"))
+		&& ctrl_pdata->on_cmds_esd.cmd_cnt) {
+		mdss_dsi_panel_cmds_send(ctrl_pdata, &ctrl_pdata->on_cmds_esd);
+		printk("sleep exit & display on reset panel\n");
+		return 0;
+	}
+	
+	return 1;
+}
+#endif
 
 static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 {
@@ -634,6 +633,7 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 				panel_data);
 
 	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
+	printk("lcd:%s \n",__func__);
 
 	mipi  = &pdata->panel_info.mipi;
 
@@ -759,16 +759,11 @@ static int mdss_dsi_parse_dcs_cmds(struct device_node *np,
 		len -= dchdr->dlen;
 	}
 
-	/*Set default link state to LP Mode*/
-	pcmds->link_state = DSI_LP_MODE;
-
-	if (link_key) {
-		data = of_get_property(np, link_key, NULL);
-		if (data && !strcmp(data, "dsi_hs_mode"))
-			pcmds->link_state = DSI_HS_MODE;
-		else
-			pcmds->link_state = DSI_LP_MODE;
-	}
+	data = of_get_property(np, link_key, NULL);
+	if (data && !strcmp(data, "dsi_hs_mode"))
+		pcmds->link_state = DSI_HS_MODE;
+	else
+		pcmds->link_state = DSI_LP_MODE;
 
 	pr_debug("%s: dcs_cmd=%x len=%d, cmd_cnt=%d link_state=%d\n", __func__,
 		pcmds->buf[0], pcmds->blen, pcmds->cmd_cnt, pcmds->link_state);
@@ -781,7 +776,7 @@ exit_free:
 }
 
 
-int mdss_panel_get_dst_fmt(u32 bpp, char mipi_mode, u32 pixel_packing,
+static int mdss_panel_dt_get_dst_fmt(u32 bpp, char mipi_mode, u32 pixel_packing,
 				char *dst_format)
 {
 	int rc = 0;
@@ -1027,27 +1022,6 @@ static int mdss_dsi_parse_panel_features(struct device_node *np,
 		"qcom,ulps-enabled");
 	pr_info("%s: ulps feature %s", __func__,
 		(pinfo->ulps_feature_enabled ? "enabled" : "disabled"));
-	pinfo->esd_check_enabled = of_property_read_bool(np,
-		"qcom,esd-check-enabled");
-
-	pinfo->mipi.dynamic_switch_enabled = of_property_read_bool(np,
-		"qcom,dynamic-mode-switch-enabled");
-
-	if (pinfo->mipi.dynamic_switch_enabled) {
-		mdss_dsi_parse_dcs_cmds(np, &ctrl->video2cmd,
-			"qcom,video-to-cmd-mode-switch-commands", NULL);
-
-		mdss_dsi_parse_dcs_cmds(np, &ctrl->cmd2video,
-			"qcom,cmd-to-video-mode-switch-commands", NULL);
-
-		if (!ctrl->video2cmd.cmd_cnt || !ctrl->cmd2video.cmd_cnt) {
-			pr_warn("No commands specified for dynamic switch\n");
-			pinfo->mipi.dynamic_switch_enabled = 0;
-		}
-	}
-
-	pr_info("%s: dynamic switch feature enabled: %d", __func__,
-		pinfo->mipi.dynamic_switch_enabled);
 
 	return 0;
 }
@@ -1110,11 +1084,9 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	tmp = 0;
 	data = of_get_property(np, "qcom,mdss-dsi-pixel-packing", NULL);
 	if (data && !strcmp(data, "loose"))
-		pinfo->mipi.pixel_packing = 1;
-	else
-		pinfo->mipi.pixel_packing = 0;
-	rc = mdss_panel_get_dst_fmt(pinfo->bpp,
-		pinfo->mipi.mode, pinfo->mipi.pixel_packing,
+		tmp = 1;
+	rc = mdss_panel_dt_get_dst_fmt(pinfo->bpp,
+		pinfo->mipi.mode, tmp,
 		&(pinfo->mipi.dst_format));
 	if (rc) {
 		pr_debug("%s: problem determining dst format. Set Default\n",
@@ -1410,6 +1382,10 @@ ztemt_hw_bl_id = ztemt_get_hw_id();
 
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->on_cmds,
 		"qcom,mdss-dsi-on-command", "qcom,mdss-dsi-on-command-state");
+#ifdef CONFIG_ZTEMT_NX404H_LCD
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->on_cmds_post,
+		"qcom,mdss-dsi-on-command_post", "qcom,mdss-dsi-on-command-state");
+#endif
 
 #ifdef CONFIG_ZTEMT_LCD_DISP_ENHANCE
 /*add init code second part,mayu add 3.5*/
@@ -1419,23 +1395,6 @@ ztemt_hw_bl_id = ztemt_get_hw_id();
 
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->off_cmds,
 		"qcom,mdss-dsi-off-command", "qcom,mdss-dsi-off-command-state");
-
-	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->status_cmds,
-			"qcom,mdss-dsi-panel-status-command",
-				"qcom,mdss-dsi-panel-status-command-state");
-	rc = of_property_read_u32(np, "qcom,mdss-dsi-panel-status-value", &tmp);
-	ctrl_pdata->status_value = (!rc ? tmp : 0);
-
-
-	ctrl_pdata->status_mode = ESD_MAX;
-	rc = of_property_read_string(np,
-				"qcom,mdss-dsi-panel-status-check-mode", &data);
-	if (!rc) {
-		if (!strcmp(data, "bta_check"))
-			ctrl_pdata->status_mode = ESD_BTA;
-		else if (!strcmp(data, "reg_read"))
-			ctrl_pdata->status_mode = ESD_REG;
-	}
 
 	rc = mdss_dsi_parse_panel_features(np, ctrl_pdata);
 	if (rc) {
@@ -1472,6 +1431,9 @@ int mdss_dsi_panel_init(struct device_node *node,
 	else
 		pr_info("%s: Panel Name = %s\n", __func__, panel_name);
 
+#if defined(CONFIG_ZTEMT_NE501_LCD) || defined(CONFIG_ZTEMT_NX404H_LCD)
+		if (panel_name) ctrl_pdata->panel_name = (char *)panel_name;
+#endif
 	rc = mdss_panel_parse_dt(node, ctrl_pdata);
 	if (rc) {
 		pr_err("%s:%d panel dt parse failed\n", __func__, __LINE__);
@@ -1483,13 +1445,9 @@ int mdss_dsi_panel_init(struct device_node *node,
 	pr_info("%s: Continuous splash %s", __func__,
 		pinfo->cont_splash_enabled ? "enabled" : "disabled");
 
-	pinfo->dynamic_switch_pending = false;
-	pinfo->is_lpm_mode = false;
-
 	ctrl_pdata->on = mdss_dsi_panel_on;
 	ctrl_pdata->off = mdss_dsi_panel_off;
 	ctrl_pdata->panel_data.set_backlight = mdss_dsi_panel_bl_ctrl;
-	ctrl_pdata->switch_mode = mdss_dsi_panel_switch_mode;
 
 	return 0;
 }

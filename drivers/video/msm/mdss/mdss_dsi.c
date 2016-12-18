@@ -64,8 +64,6 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata, int enable)
 				panel_data);
 	pr_debug("%s: enable=%d\n", __func__, enable);
 
-	if (pdata->panel_info.dynamic_switch_pending)
-		return 0;
 
 	if (enable) {
 		ret = msm_dss_enable_vreg(
@@ -599,31 +597,6 @@ error:
 	return ret;
 }
 
-static int mdss_dsi_update_panel_config(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
-				int mode)
-{
-	int ret = 0;
-	struct mdss_panel_info *pinfo = &(ctrl_pdata->panel_data.panel_info);
-
-	if (mode == DSI_CMD_MODE) {
-		pinfo->mipi.mode = DSI_CMD_MODE;
-		pinfo->type = MIPI_CMD_PANEL;
-		pinfo->mipi.vsync_enable = 1;
-		pinfo->mipi.hw_vsync_mode = 1;
-	} else {	/*video mode*/
-		pinfo->mipi.mode = DSI_VIDEO_MODE;
-		pinfo->type = MIPI_VIDEO_PANEL;
-		pinfo->mipi.vsync_enable = 0;
-		pinfo->mipi.hw_vsync_mode = 0;
-	}
-
-	ctrl_pdata->panel_mode = pinfo->mipi.mode;
-	mdss_panel_get_dst_fmt(pinfo->bpp, pinfo->mipi.mode,
-			pinfo->mipi.pixel_packing, &(pinfo->mipi.dst_format));
-	pinfo->cont_splash_enabled = 0;
-
-	return ret;
-}
 static int mdss_dsi_ulps_config(struct mdss_dsi_ctrl_pdata *ctrl,
 	int enable)
 {
@@ -757,13 +730,13 @@ static int mdss_dsi_unblank(struct mdss_panel_data *pdata)
 	mipi  = &pdata->panel_info.mipi;
 
 	if (!(ctrl_pdata->ctrl_state & CTRL_STATE_PANEL_INIT)) {
-		if (!pdata->panel_info.dynamic_switch_pending) {
-			ret = ctrl_pdata->on(pdata);
-			if (ret) {
-				pr_err("%s: unable to initialize the panel\n",
-							__func__);
-				return ret;
-			}
+		ret = ctrl_pdata->on(pdata);
+		if (ret) {
+			pr_err("%s: unable to initialize the panel\n",
+
+ 							__func__);
+			return ret;
+
 		}
 		ctrl_pdata->ctrl_state |= CTRL_STATE_PANEL_INIT;
 	}
@@ -824,17 +797,6 @@ static int mdss_dsi_blank(struct mdss_panel_data *pdata)
 
 	mdss_dsi_op_mode_config(DSI_CMD_MODE, pdata);
 
-	if (pdata->panel_info.dynamic_switch_pending) {
-		pr_info("%s: switching to %s mode\n", __func__,
-			(pdata->panel_info.mipi.mode ? "video" : "command"));
-		if (pdata->panel_info.type == MIPI_CMD_PANEL) {
-			ctrl_pdata->switch_mode(pdata, DSI_VIDEO_MODE);
-		} else if (pdata->panel_info.type == MIPI_VIDEO_PANEL) {
-			ctrl_pdata->switch_mode(pdata, DSI_CMD_MODE);
-			mdss_dsi_set_tear_off(ctrl_pdata);
-		}
-	}
-
 	if (pdata->panel_info.type == MIPI_CMD_PANEL) {
 		if (mipi->vsync_enable && mipi->hw_vsync_mode
 			&& gpio_is_valid(ctrl_pdata->disp_te_gpio)) {
@@ -843,12 +805,11 @@ static int mdss_dsi_blank(struct mdss_panel_data *pdata)
 	}
 
 	if (ctrl_pdata->ctrl_state & CTRL_STATE_PANEL_INIT) {
-		if (!pdata->panel_info.dynamic_switch_pending) {
-			ret = ctrl_pdata->off(pdata);
-			if (ret) {
-				pr_err("%s: Panel OFF failed\n", __func__);
-				return ret;
-			}
+		ret = ctrl_pdata->off(pdata);
+		if (ret) {
+			pr_err("%s: Panel OFF failed\n", __func__);
+			return ret;
+
 		}
 		ctrl_pdata->ctrl_state &= ~CTRL_STATE_PANEL_INIT;
 	}
@@ -1091,10 +1052,8 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		rc = mdss_dsi_register_recovery_handler(ctrl_pdata,
 			(struct mdss_panel_recovery *)arg);
 		break;
-	case MDSS_EVENT_DSI_DYNAMIC_SWITCH:
-		rc = mdss_dsi_update_panel_config(ctrl_pdata,
-					(int)(unsigned long) arg);
-		break;
+
+		
 	default:
 		pr_debug("%s: unhandled event=%d\n", __func__, event);
 		break;
@@ -1628,15 +1587,33 @@ int dsi_panel_device_register(struct device_node *pan_node,
 
 	ctrl_pdata->panel_data.event_handler = mdss_dsi_event_handler;
 
-	if (ctrl_pdata->status_mode == ESD_REG)
-		ctrl_pdata->check_status = mdss_dsi_reg_status_check;
-	else if (ctrl_pdata->status_mode == ESD_BTA)
-		ctrl_pdata->check_status = mdss_dsi_bta_status_check;
+	/*qcom ori*/
+	ctrl_pdata->check_status = mdss_dsi_bta_status_check;
+#ifdef CONFIG_ZTEMT_LCD_ESD_TE_CHECK
+#if defined(CONFIG_ZTEMT_NE501_LCD)
+/*esd check faild check,mayu add*/
+    if (ctrl_pdata->panel_name
+           && (!strcmp(ctrl_pdata->panel_name, "cs nt35592 720p video mode dsi panel")
+                || !strcmp(ctrl_pdata->panel_name, "lianchuang nt35592 720p video mode dsi panel"))) {
+		ctrl_pdata->check_status = zte_check_status_by_te;
+		printk("nt35592 check by te\n");
 
-	if (ctrl_pdata->status_mode == ESD_MAX) {
-		pr_err("%s: Using default BTA for ESD check\n", __func__);
-		ctrl_pdata->check_status = mdss_dsi_bta_status_check;
+	} else if (ctrl_pdata->panel_name 
+		&& !strcmp(ctrl_pdata->panel_name, "success hx8392b 720p video mode dsi panel")) {
+		ctrl_pdata->check_status = success_hx83920b_check_status;
+		printk("hx83920b check faled always\n");
 	}
+#elif defined(CONFIG_ZTEMT_NX404H_LCD)
+	if (ctrl_pdata->panel_name
+           && !strcmp(ctrl_pdata->panel_name, "otm1282a 720p command mode dsi panel")) {
+		ctrl_pdata->check_status = zte_check_status_by_te;
+	}else{
+    //other lcd run empty fun
+    ctrl_pdata->check_status = zte_check_status_ok;
+	}
+#endif
+#endif //CONFIG_ZTEMT_LCD_ESD_TE_CHECK
+
 	if (ctrl_pdata->bklt_ctrl == BL_PWM)
 		mdss_dsi_panel_pwm_cfg(ctrl_pdata);
 

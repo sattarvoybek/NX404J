@@ -104,6 +104,20 @@ config ZTEMT_LCD_AVDD_CONFIG_BY_TPS65132
 	depends on ZTEMT_LCD_MIPI_COMMON
 	default n
 	
+config ZTEMT_MIPI_720P_R69431_SHARP_IPS_4P7
+	bool "MIPI 720P R69431 SHARP IPS 4P7"
+	depends on ZTEMT_LCD_MIPI_COMMON
+	default n
+	
+config ZTEMT_NE501_LCD
+	bool "ztemt NE501J LCD driver module"
+	default n
+    
+config ZTEMT_NX404H_LCD
+	bool "ztemt NX404H LCD driver module"
+	default n
+		
+		
 config ZTEMT_LCD_DISP_ENHANCE
 	bool "LCD disp color enhance"
 	depends on ZTEMT_LCD_MIPI_COMMON

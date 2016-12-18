@@ -12,4 +12,5 @@ make INSTALL_MOD_STRIP=--strip-unneeded INSTALL_MOD_PATH=out/system INSTALL_MOD_
 ./dtbToolCM -2 -o ./out/dt.img -s 2048 -p ./scripts/dtc/ ./arch/arm/boot/
 
 cp ./arch/arm/boot/zImage ./out/zImage
-
+cp ./drivers/staging/prima/wlan.ko ./out/wlan.ko
+cp ./drivers/char/rdbg.ko ./out/rdbg.ko

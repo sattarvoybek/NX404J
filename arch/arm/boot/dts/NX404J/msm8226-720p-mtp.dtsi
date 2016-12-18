@@ -602,3 +602,22 @@
      status = "disabled";
      qcom,cont-splash-enabled;
 };
+
+&dsi_otm1282a_720_vid {
+     status = "disabled";
+     qcom,cont-splash-enabled;
+};
+
+
+&dsi_otm1282a_720_cmd {
+     status = "disabled";
+     qcom,cont-splash-enabled;
+};
+
+&dsi_r63311_1080_vid {
+	status = "disabled";
+	qcom,cont-splash-enabled;
+};
+&dsi_nt35590_720_vid {
+	qcom,cont-splash-enabled;
+};
